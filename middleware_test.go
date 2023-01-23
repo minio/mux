@@ -512,11 +512,9 @@ func TestMiddlewareOnMultiSubrouter(t *testing.T) {
 	})
 
 	firstSubRouter.HandleFunc("/first", func(w http.ResponseWriter, r *http.Request) {
-
 	})
 
 	secondSubRouter.HandleFunc("/second", func(w http.ResponseWriter, r *http.Request) {
-
 	})
 
 	firstSubRouter.Use(func(h http.Handler) http.Handler {

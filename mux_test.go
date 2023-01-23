@@ -52,7 +52,6 @@ type routeTest struct {
 }
 
 func TestHost(t *testing.T) {
-
 	tests := []routeTest{
 		{
 			title:       "Host route match",
@@ -1600,7 +1599,7 @@ func TestWalkSingleDepth(t *testing.T) {
 	err := r0.Walk(func(route *Route, router *Router, ancestors []*Route) error {
 		matcher := route.matchers[0].(*routeRegexp)
 		if matcher.template == "/d" {
-			return SkipRouter
+			return ErrSkipRouter
 		}
 		if len(ancestors) != depths[i] {
 			t.Errorf(`Expected depth of %d at i = %d; got "%d"`, depths[i], i, len(ancestors))
