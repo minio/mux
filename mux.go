@@ -32,17 +32,17 @@ func NewRouter() *Router {
 // It implements the http.Handler interface, so it can be registered to serve
 // requests:
 //
-//     var router = mux.NewRouter()
+//	var router = mux.NewRouter()
 //
-//     func main() {
-//         http.Handle("/", router)
-//     }
+//	func main() {
+//	    http.Handle("/", router)
+//	}
 //
 // Or, for Google App Engine, register it in a init() function:
 //
-//     func init() {
-//         http.Handle("/", router)
-//     }
+//	func init() {
+//	    http.Handle("/", router)
+//	}
 //
 // This will send all incoming requests to the router.
 type Router struct {
@@ -238,7 +238,7 @@ func (r *Router) GetRoute(name string) *Route {
 // The re-direct is a HTTP 301 (Moved Permanently). Note that when this is set for
 // routes with a non-idempotent method (e.g. POST, PUT), the subsequent re-directed
 // request will be made as a GET by most clients. Use middleware or client settings
-// to modify this behaviour as needed.
+// to modify this behavior as needed.
 //
 // Special case: when a route sets a path prefix using the PathPrefix() method,
 // strict slash is ignored for that route because the redirect behavior can't
@@ -249,7 +249,7 @@ func (r *Router) StrictSlash(value bool) *Router {
 	return r
 }
 
-// SkipClean defines the path cleaning behaviour for new routes. The initial
+// SkipClean defines the path cleaning behavior for new routes. The initial
 // value is false. Users should be careful about which routes are not cleaned
 //
 // When true, if the route path is "/path//to", it will remain with the double
@@ -263,7 +263,9 @@ func (r *Router) SkipClean(value bool) *Router {
 }
 
 // OmitRouteFromContext defines the behavior of omitting the Route from the
-//   http.Request context.
+//
+//	http.Request context.
+//
 // CurrentRoute will yield nil with this option.
 func (r *Router) OmitRouteFromContext(value bool) *Router {
 	r.omitRouteFromContext = value
@@ -308,7 +310,8 @@ func (r *Router) Handle(path string, handler http.Handler) *Route {
 // HandleFunc registers a new route with a matcher for the URL path.
 // See Route.Path() and Route.HandlerFunc().
 func (r *Router) HandleFunc(path string, f func(http.ResponseWriter,
-	*http.Request)) *Route {
+	*http.Request),
+) *Route {
 	return r.NewRoute().Path(path).HandlerFunc(f)
 }
 
@@ -373,9 +376,9 @@ func (r *Router) Walk(walkFn WalkFunc) error {
 	return r.walk(walkFn, []*Route{})
 }
 
-// SkipRouter is used as a return value from WalkFuncs to indicate that the
+// ErrSkipRouter is used as a return value from WalkFuncs to indicate that the
 // router that walk is about to descend down to should be skipped.
-var SkipRouter = errors.New("skip this router")
+var ErrSkipRouter = errors.New("skip this router")
 
 // WalkFunc is the type of the function called for each route visited by Walk.
 // At every invocation, it is given the current route, and the current router,
@@ -385,7 +388,7 @@ type WalkFunc func(route *Route, router *Router, ancestors []*Route) error
 func (r *Router) walk(walkFn WalkFunc, ancestors []*Route) error {
 	for _, t := range r.routes {
 		err := walkFn(t, r, ancestors)
-		if err == SkipRouter {
+		if errors.Is(err, ErrSkipRouter) {
 			continue
 		}
 		if err != nil {
@@ -467,7 +470,8 @@ func requestWithVars(r *http.Request, vars map[string]string) *http.Request {
 
 // requestWithRouteAndVars adds the matched route and vars to the request ctx.
 // It saves extra allocations in cloning the request once and skipping the
-//  population of empty vars, which in turn mux.Vars can handle gracefully.
+//
+//	population of empty vars, which in turn mux.Vars can handle gracefully.
 func requestWithRouteAndVars(r *http.Request, route *Route, vars map[string]string) *http.Request {
 	ctx := context.WithValue(r.Context(), routeKey, route)
 	if len(vars) > 0 {

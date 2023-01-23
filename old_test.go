@@ -522,7 +522,6 @@ func TestSchemeMatcher(t *testing.T) {
 }
 
 func TestUrlBuilding(t *testing.T) {
-
 	for _, v := range urlBuildingTests {
 		u, _ := v.route.URL(v.vars...)
 		url := u.String()
