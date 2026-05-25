@@ -5,7 +5,6 @@
 package mux
 
 import (
-	"bytes"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -117,10 +116,15 @@ func newRouteRegexp(tpl string, typ regexpType, options routeRegexpOptions) (*ro
 	if options.strictSlash {
 		pattern.WriteString("[/]?")
 	}
+	var templateKey string
 	if typ == regexpTypeQuery {
-		// Add the default pattern if the query value is empty
-		if queryVal := strings.SplitN(template, "=", 2)[1]; queryVal == "" {
-			pattern.WriteString(defaultPattern)
+		if eq := strings.IndexByte(template, '='); eq >= 0 {
+			templateKey = template[:eq]
+			if eq == len(template)-1 {
+				pattern.WriteString(defaultPattern)
+			}
+		} else {
+			templateKey = template
 		}
 	}
 	if typ != regexpTypePrefix {
@@ -154,6 +158,7 @@ func newRouteRegexp(tpl string, typ regexpType, options routeRegexpOptions) (*ro
 	// Done!
 	return &routeRegexp{
 		template:         template,
+		templateKey:      templateKey,
 		regexpType:       typ,
 		options:          options,
 		regexp:           reg,
@@ -169,6 +174,9 @@ func newRouteRegexp(tpl string, typ regexpType, options routeRegexpOptions) (*ro
 type routeRegexp struct {
 	// The unmodified template.
 	template string
+	// The query template key (substring of template up to "="). Only set for
+	// regexpTypeQuery so getURLQuery can avoid splitting on every request.
+	templateKey string
 	// The type of match
 	regexpType regexpType
 	// Options for matching
@@ -244,10 +252,9 @@ func (r *routeRegexp) getURLQuery(req *http.Request) string {
 	if r.regexpType != regexpTypeQuery {
 		return ""
 	}
-	templateKey := strings.SplitN(r.template, "=", 2)[0]
-	val, ok := findFirstQueryKey(req.URL.RawQuery, templateKey)
+	val, ok := findFirstQueryKey(req.URL.RawQuery, r.templateKey)
 	if ok {
-		return templateKey + "=" + val
+		return r.templateKey + "=" + val
 	}
 	return ""
 }
@@ -255,33 +262,32 @@ func (r *routeRegexp) getURLQuery(req *http.Request) string {
 // findFirstQueryKey returns the same result as (*url.URL).Query()[key][0].
 // If key was not found, empty string and false is returned.
 func findFirstQueryKey(rawQuery, key string) (value string, ok bool) {
-	query := []byte(rawQuery)
-	for len(query) > 0 {
-		foundKey := query
-		if i := bytes.IndexAny(foundKey, "&;"); i >= 0 {
-			foundKey, query = foundKey[:i], foundKey[i+1:]
+	for len(rawQuery) > 0 {
+		foundKey := rawQuery
+		if i := strings.IndexAny(foundKey, "&;"); i >= 0 {
+			foundKey, rawQuery = foundKey[:i], foundKey[i+1:]
 		} else {
-			query = query[:0]
+			rawQuery = ""
 		}
 		if len(foundKey) == 0 {
 			continue
 		}
-		var value []byte
-		if i := bytes.IndexByte(foundKey, '='); i >= 0 {
-			foundKey, value = foundKey[:i], foundKey[i+1:]
+		var rawValue string
+		if i := strings.IndexByte(foundKey, '='); i >= 0 {
+			foundKey, rawValue = foundKey[:i], foundKey[i+1:]
 		}
 		if len(foundKey) < len(key) {
 			// Cannot possibly be key.
 			continue
 		}
-		keyString, err := url.QueryUnescape(string(foundKey))
+		keyString, err := url.QueryUnescape(foundKey)
 		if err != nil {
 			continue
 		}
 		if keyString != key {
 			continue
 		}
-		valueString, err := url.QueryUnescape(string(value))
+		valueString, err := url.QueryUnescape(rawValue)
 		if err != nil {
 			continue
 		}

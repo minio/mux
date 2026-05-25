@@ -203,17 +203,15 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if r.Match(req, &match) {
 		handler = match.Handler
 		if handler != nil {
-			// Populate context for custom handlers
-			if r.omitRouteFromContext {
-				// Only populate the match vars (if any) into the context.
-				req = requestWithVars(req, match.Vars)
-			} else {
-				req = requestWithRouteAndVars(req, match.Route, match.Vars)
+			var route *Route
+			var router *Router
+			if !r.omitRouteFromContext {
+				route = match.Route
 			}
-
 			if !r.omitRouterFromContext {
-				req = requestWithRouter(req, r)
+				router = r
 			}
+			req = requestWithMuxContext(req, route, match.Vars, router)
 		}
 	}
 
@@ -464,7 +462,11 @@ const (
 
 // Vars returns the route variables for the current request, if any.
 func Vars(r *http.Request) map[string]string {
-	if rv := r.Context().Value(varsKey); rv != nil {
+	ctx := r.Context()
+	if c, ok := ctx.(*muxContext); ok {
+		return c.vars
+	}
+	if rv := ctx.Value(varsKey); rv != nil {
 		return rv.(map[string]string)
 	}
 	return nil
@@ -475,44 +477,74 @@ func Vars(r *http.Request) map[string]string {
 // because the matched route is stored in the request context which is cleared
 // after the handler returns.
 func CurrentRoute(r *http.Request) *Route {
-	if rv := r.Context().Value(routeKey); rv != nil {
+	ctx := r.Context()
+	if c, ok := ctx.(*muxContext); ok {
+		return c.route
+	}
+	if rv := ctx.Value(routeKey); rv != nil {
 		return rv.(*Route)
 	}
 	return nil
 }
 
 func CurrentRouter(r *http.Request) *Router {
-	if rv := r.Context().Value(routerKey); rv != nil {
+	ctx := r.Context()
+	if c, ok := ctx.(*muxContext); ok {
+		return c.router
+	}
+	if rv := ctx.Value(routerKey); rv != nil {
 		return rv.(*Router)
 	}
 	return nil
 }
 
-// requestWithVars adds the matched vars to the request ctx.
-// It shortcuts the operation when the vars are empty.
-func requestWithVars(r *http.Request, vars map[string]string) *http.Request {
+// muxContext folds the mux-specific context values (route, vars, router) into
+// a single allocation that satisfies context.Context, instead of chaining
+// multiple context.WithValue calls.
+type muxContext struct {
+	context.Context
+	route  *Route
+	router *Router
+	vars   map[string]string
+}
+
+func (c *muxContext) Value(key any) any {
+	if k, ok := key.(contextKey); ok {
+		switch k {
+		case varsKey:
+			if c.vars != nil {
+				return c.vars
+			}
+		case routeKey:
+			if c.route != nil {
+				return c.route
+			}
+		case routerKey:
+			if c.router != nil {
+				return c.router
+			}
+		}
+	}
+	return c.Context.Value(key)
+}
+
+// requestWithMuxContext wraps the request with a muxContext carrying the
+// matched route, vars, and router. Empty vars and nil route/router fields
+// are skipped — Vars/CurrentRoute/CurrentRouter will return nil for them,
+// matching the previous chained-WithValue behavior.
+func requestWithMuxContext(r *http.Request, route *Route, vars map[string]string, router *Router) *http.Request {
 	if len(vars) == 0 {
+		vars = nil
+	}
+	if route == nil && router == nil && vars == nil {
 		return r
 	}
-	ctx := context.WithValue(r.Context(), varsKey, vars)
-	return r.WithContext(ctx)
-}
-
-// requestWithRouteAndVars adds the matched route and vars to the request ctx.
-// It saves extra allocations in cloning the request once and skipping the
-//
-//	population of empty vars, which in turn mux.Vars can handle gracefully.
-func requestWithRouteAndVars(r *http.Request, route *Route, vars map[string]string) *http.Request {
-	ctx := context.WithValue(r.Context(), routeKey, route)
-	if len(vars) > 0 {
-		ctx = context.WithValue(ctx, varsKey, vars)
-	}
-	return r.WithContext(ctx)
-}
-
-func requestWithRouter(r *http.Request, router *Router) *http.Request {
-	ctx := context.WithValue(r.Context(), routerKey, router)
-	return r.WithContext(ctx)
+	return r.WithContext(&muxContext{
+		Context: r.Context(),
+		route:   route,
+		router:  router,
+		vars:    vars,
+	})
 }
 
 // ----------------------------------------------------------------------------
